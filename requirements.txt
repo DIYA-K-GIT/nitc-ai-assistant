@@ -1,0 +1,14 @@
+pypdf
+streamlit
+fastapi
+uvicorn
+pydantic
+langchain
+langchain-core
+langchain-community
+langchain-huggingface
+chromadb
+rank_bm25
+pymupdf
+pdf2image
+pytesseract

@@ -1,0 +1,12 @@
+# Databases
+chroma_db/
+college_rules.db
+
+# Documents
+raw_notices/
+extracted_text/
+
+# Python Cache
+__pycache__/
+*.pyc
+.env
