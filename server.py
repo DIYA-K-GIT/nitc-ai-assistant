@@ -14,8 +14,6 @@ from langchain_core.documents import Document
 
 CHROMA_DIR = "./chroma_db"
 DB_PATH = "./college_rules.db"
-
-# 1. Initialize API
 app = FastAPI(title="NITC Notice Bot API")
 
 app.add_middleware(
@@ -28,8 +26,6 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     question: str
-
-# 2. Advanced Vocabulary Synonym Map (Matching Friend's Features)
 SYNONYM_MAP = {
     "fees": "tuition fee caution deposit fine semester registration financial payment",
     "fee": "tuition fee caution deposit fine semester registration financial payment",
@@ -38,8 +34,6 @@ SYNONYM_MAP = {
     "final semester": "eighth semester 8th semester graduation project",
     "placement": "internship project drive campus recruitment credits"
 }
-
-# 3. Load the RAG Engine Globally
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 vector_store = Chroma(persist_directory=CHROMA_DIR, embedding_function=embeddings)
 chroma_retriever = vector_store.as_retriever(search_kwargs={"k": 3})
@@ -66,47 +60,35 @@ def log_to_db(user_query, rewritten_query, response):
         conn.close()
     except Exception as e:
         print(f"Logging error: {e}")
-
-# 4. Create the Chat Endpoint
 @app.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
     try:
         user_query = request.question.lower().strip()
-        
-        # FEATURE 1 FIXED: Now accurately detects multi-word phrases like "final semester"
         expanded_keywords = ""
         for key, value in SYNONYM_MAP.items():
             if key in user_query:
                 expanded_keywords += f" {value}"
         
         search_query = f"{user_query} {expanded_keywords}".strip()
-        
-        # Let the LLM rewrite the enhanced query into targeted search keywords
         rewrite_prompt = PromptTemplate.from_template("Rewrite this question into 3-5 formal academic keywords. Output ONLY the keywords. Question: {question}\nKeywords:")
         rewritten_query = llm.invoke(rewrite_prompt.format(question=search_query)).strip()
         
-        # FEATURE 3: The Rewrite Failsafe (Matching your friend's logic)
-        # If the LLM gets chatty or outputs too many words, throw it away and use the original query
         if len(rewritten_query.split()) > 10 or "Here" in rewritten_query or "keywords" in rewritten_query.lower():
             print(f"\n[WARNING] LLM generated a bad rewrite: {rewritten_query}")
             rewritten_query = search_query
             
         print(f"\n[DEBUG] Searching Database With: '{rewritten_query}'\n")
         
-        # Retrieve context from both engines
         bm25_docs = bm25_retriever.invoke(rewritten_query)
         vector_docs = chroma_retriever.invoke(rewritten_query)
         
         unique_docs = {d.page_content: d for d in bm25_docs + vector_docs}
         retrieved_docs = list(unique_docs.values())[:4]
         
-        # --- DEBUG VISUALIZER ---
         print("--- WHAT THE DATABASE FOUND ---")
         for i, doc in enumerate(retrieved_docs):
             print(f"Doc {i+1} [Rule: {doc.metadata.get('rule')}]: {doc.page_content[:150]}...")
         print("-------------------------------\n")
-
-        # Handle case where absolutely no data is found to prevent LLM crashes
         if not retrieved_docs:
             return {"answer": "I cannot find any specific information regarding that topic in the current institutional regulations."}
             
@@ -124,7 +106,6 @@ async def chat_endpoint(request: ChatRequest):
         
         raw_response = llm.invoke(qa_prompt.format(context=context, question=user_query))
         
-        # FEATURE 2: Defensive Response Parsing (Guarantees frontend never gets undefined)
         final_response = str(raw_response).strip() if raw_response else "I am having trouble parsing the regulations for this query. Please try phrasing it more formally."
         
         log_to_db(user_query, rewritten_query, final_response)
