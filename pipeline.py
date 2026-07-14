@@ -54,6 +54,7 @@ def extract_text_hybrid(pdf_path):
     return full_text
 
 # --- 3. Dynamic NITC Chunker ---
+# --- 3. Dynamic NITC Chunker ---
 def chunk_documents(text, filename):
     # Matches patterns like "R.1", "R.1.1", "R.2.1.a", etc., at the start of a line
     rule_pattern = re.compile(r'(?m)^(R\.\d+(?:\.\d+)*[a-z]?\s+.*)')
@@ -61,31 +62,35 @@ def chunk_documents(text, filename):
     
     chunks = []
     
-    # If the document actually contains structured rules (more than 2 matches)
     if len(parts) > 2:
-        print(" -> Detected structured rules (R.x). Applying custom NITC chunking...")
-        current_rule = "General Context"
+        print(" -> Detected structured rules (R.x). Applying custom NITC chunking & Metadata Injection...")
         
         for part in parts:
             part = part.strip()
             if not part: continue
             
             if rule_pattern.match(part):
-                current_rule = part.split(' ', 1)[0] # Extract just the "R.1.x" part
-                chunks.append(Document(page_content=part, metadata={"source": filename, "rule": current_rule}))
+                # The part itself IS the title line (e.g., "R.5 Fee Structure")
+                title_line = part
+                rule_number = part.split(' ', 1)[0]
+                
+                # Start the chunk with the title explicitly baked in
+                chunks.append(Document(
+                    page_content=f"Rule Header: {title_line}\n\n", 
+                    metadata={"source": filename, "rule": rule_number}
+                ))
             else:
                 if chunks:
-                    chunks[-1].page_content += "\n" + part
+                    # Append the actual rule text below the injected header
+                    chunks[-1].page_content += part
                 else:
                     chunks.append(Document(page_content=part, metadata={"source": filename, "rule": "Intro"}))
         return chunks
     
-    # Fallback: If it's a normal notice without 'R.x' rules, use your original Recursive chunker!
     print(" -> No structured rules found. Falling back to Recursive Character splitting...")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=100)
     base_doc = Document(page_content=text, metadata={"source": filename, "rule": "General Info"})
     return text_splitter.split_documents([base_doc])
-
 # --- 4. Main Ingestion Loop ---
 def build_vector_db():
     pdf_files = [f for f in os.listdir(RAW_DIR) if f.endswith('.pdf')]
